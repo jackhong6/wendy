@@ -8,6 +8,7 @@ import ctypes.util
 import copy
 import numpy
 from numpy.ctypeslib import ndpointer
+from enum import Enum, auto
 #Find and load the library
 _lib= None
 outerr= None
@@ -103,6 +104,12 @@ class MyQuadPoly:
         coeff= self.coeff
         mba= -coeff[1]/coeff[2]
         return 0.5*(mba+numpy.sqrt(mba**2.-4.*coeff[0]/coeff[2]))
+
+class EnergyType(Enum):
+    POTENTIAL= auto()
+    KINETIC= auto()
+    TOTAL= auto()
+    RATIO= auto()
 
 def nbody(x,v,m,dt,twopiG=1.,omega=None,approx=False,nleap=None,
           maxcoll=100000,warn_maxcoll=False,
@@ -372,7 +379,7 @@ def _nbody_approx(x,v,m,dt,nleap,omega=None,twopiG=1.,full_output=False):
         else:
             yield (x,v)
 
-def energy(x,v,m,twopiG=1.,individual=False,omega=None):
+def energy(x,v,m,twopiG=1.,individual=False,omega=None,energy_type=EnergyType.TOTAL):
     """
     NAME:
        energy
@@ -385,11 +392,13 @@ def energy(x,v,m,twopiG=1.,individual=False,omega=None):
        twopiG= (1.) value of 2 \pi G
        individual= (False) if True, return each particle's individual energy (note: individual energies don't add up to the system's energy)
        omega= (None) if set, frequency of external harmonic oscillator
+       energy_type= (EnergyType.TOTAL) choose to return the potential, kinetic, or total energy
     OUTPUT:
        Energy
     HISTORY:
        2017-04-24 - Written - Bovy (UofT/CCA)
        2017-05-10 - Added individual energies - Bovy (UofT/CCA)
+       2019-03-19 - Added option to return potential, kinetic, total, or ratio KE/PE (UBC) - Hong (UBC)
     """
     if not omega is None:
         out= m*omega**2.*x**2./2.
@@ -401,14 +410,23 @@ def energy(x,v,m,twopiG=1.,individual=False,omega=None):
             *numpy.sum(m*numpy.fabs(x-numpy.atleast_2d(x).T),axis=1)\
             +m*v**2./2.
     else:
-        sindx= numpy.argsort(x)
-        mass_below= numpy.roll(numpy.cumsum(m[sindx]),1)
-        mass_below[0]= 0.
-        xmass_below= numpy.roll(numpy.cumsum((m*x)[sindx]),1)
-        xmass_below[0]= 0.
-        return numpy.sum(out)\
-            +twopiG*numpy.sum(m[sindx]*(mass_below*x[sindx]-xmass_below))\
-            +numpy.sum(m*v**2./2.)
+        potential_energy= 0
+        kinetic_energy= 0
+        if energy_type==EnergyType.TOTAL or energy_type==EnergyType.RATIO or energy_type==EnergyType.KINETIC:
+            kinetic_energy=  numpy.sum(m * v ** 2. / 2.)
+        if energy_type==EnergyType.TOTAL or energy_type==EnergyType.RATIO or energy_type==EnergyType.POTENTIAL:
+            sindx= numpy.argsort(x)
+            mass_below= numpy.roll(numpy.cumsum(m[sindx]),1)
+            mass_below[0]= 0.
+            xmass_below= numpy.roll(numpy.cumsum((m*x)[sindx]),1)
+            xmass_below[0]= 0.
+            potential_energy= numpy.sum(out) \
+                + twopiG * numpy.sum(m[sindx] * (mass_below * x[sindx] - xmass_below))
+
+        if energy_type==EnergyType.RATIO:
+            return kinetic_energy / potential_energy
+        else:
+            return kinetic_energy + potential_energy
 
 def momentum(v,m):
     """
@@ -451,3 +469,24 @@ def potential(y,x,v,m,twopiG=1.,omega=None):
     return out\
         +twopiG\
         *numpy.sum(m*numpy.fabs(x-numpy.atleast_2d(y).T),axis=1)
+
+def density_profile(x, m, bins='auto'):
+    """
+    NAMES:
+        density_profile
+    PURPOSE:
+        compute the density as a function of distance by using a histogram. m assumed to be the same for each particle
+    INPUT:
+        :param x: positions of N-body particles [N]
+        :param m: masses of N-body particles [N] NOTE: only first entry used
+        :param bins: bin edges to use or a string indicating algorithm to determine bins
+    OUTPUT:
+        :return: bin centers, density of each bin
+    HISTORY:
+        2019-05-20 - Written - Hong (UBC)
+    """
+    hist, b= numpy.histogram(x, bins=bins)
+    bin_sizes= numpy.roll(b, -1)[0:len(b)-1] - b[0:len(b)-1]
+    bin_centers= (numpy.roll(b, -1)[0:len(b)-1] + b[0:len(b)-1]) / 2.
+    densities = m[0]*hist / bin_sizes
+    return bin_centers, densities

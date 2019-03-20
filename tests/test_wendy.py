@@ -166,3 +166,75 @@ def test_notracermasses_error():
     assert str(excinfo.value) == 'Tiny masses m much smaller than the median mass are not supported, please remove these from the inputs'   
     return None
 
+def test_kinetic_energy():
+    # Test that kinetic energy is 0 for 0 velocities
+    x= numpy.array([-1.1,0.1,1.3])
+    v= numpy.array([0, 0, 0])
+    m= numpy.array([1.,1.,1.])
+    assert wendy.energy(x, v, m, energy_type=wendy.EnergyType.KINETIC) == 0, "Kinetic energy should be zero when v=0 for all particles."
+
+    # Test that kinetic energy is given by 1/2 mv^2
+    x= numpy.array([-1, 0, 1])
+    v= numpy.array([1.2, 2.3, -4.2])
+    m= numpy.array([.3, .3, .3])
+
+    ke= numpy.sum(0.5 * m * v**2)
+    assert ((wendy.energy(x, v, m, energy_type=wendy.EnergyType.KINETIC)-ke) < 1e-12), "Kinetic energy should be 1/2 mv^2."
+
+def test_potential_energy():
+    # Test potential energy for a simple system
+    x= numpy.array([-2., 0, 3.])
+    v= numpy.array([1, 2, 3])
+    m= numpy.array([.3, .3, .3])
+
+    assert (wendy.energy(x, v, m, energy_type=wendy.EnergyType.POTENTIAL)-10.) < 1e-12, "Potential energy not correctly calculated"
+
+def test_total_energy():
+    # Test that total energy is sum of potential and kinetic energy
+    x= numpy.array([-1.1,0.1,1.3])
+    v= numpy.array([3.,2.,-5.])
+    m= numpy.array([1.,1.,1.])
+    g= wendy.nbody(x,v,m,0.05)
+    cnt= 0
+    while cnt < 10:
+        tx,tv= next(g)
+        Etot= wendy.energy(tx,tv,m, energy_type=wendy.EnergyType.TOTAL)
+        Epot= wendy.energy(tx,tv,m, energy_type=wendy.EnergyType.POTENTIAL)
+        Ekin= wendy.energy(tx,tv,m, energy_type=wendy.EnergyType.KINETIC)
+
+        assert Etot == Epot + Ekin, "Total energy should be sum of kinetic and potential energies"
+        cnt+= 1
+    return None
+
+def test_energy_ratio():
+    # Test that energy ratio gives ratio of kinetic to potential energy
+    x= numpy.array([-1.1,0.1,1.3])
+    v= numpy.array([3.,2.,-5.])
+    m= numpy.array([1.,1.,1.])
+    g= wendy.nbody(x,v,m,0.05)
+    cnt= 0
+    while cnt < 10:
+        tx,tv= next(g)
+        Erat= wendy.energy(tx,tv,m, energy_type=wendy.EnergyType.RATIO)
+        Epot= wendy.energy(tx,tv,m, energy_type=wendy.EnergyType.POTENTIAL)
+        Ekin= wendy.energy(tx,tv,m, energy_type=wendy.EnergyType.KINETIC)
+
+        assert Erat == Ekin / Epot, "Energy ratio should be kinetic divided potential energy"
+        cnt+= 1
+    return None
+
+def test_density_profile():
+    # Test that density profile runs and gives reasonable results
+    x= numpy.linspace(-5, 5, 100)
+    v= x * 0.01
+    m= numpy.ones(x.shape)
+    g= wendy.nbody(x,v,m,0.05)
+    cnt= 0
+    while cnt < 10:
+        tx,tv= next(g)
+        bin_centers, densities = wendy.density_profile(tx, m)
+        assert len(bin_centers) == len(densities)
+        assert (numpy.fabs(bin_centers) < 7).all(), "bin centers should not exceed range of x"
+        assert (densities > 0).all() and (densities < 100).all(), "densities should be positive and not too large"
+        cnt+= 1
+    return None
