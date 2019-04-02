@@ -485,7 +485,7 @@ def density_profile(x, m, bins='auto'):
     HISTORY:
         2019-05-20 - Written - Hong (UBC)
     """
-    hist, b= numpy.histogram(x, bins=bins)
+    hist, b= numpy.histogram(numpy.fabs(x), bins=bins)
     bin_sizes= numpy.roll(b, -1)[0:len(b)-1] - b[0:len(b)-1]
     bin_centers= (numpy.roll(b, -1)[0:len(b)-1] + b[0:len(b)-1]) / 2.
     densities = m[0]*hist / bin_sizes
